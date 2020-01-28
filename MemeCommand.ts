@@ -20,7 +20,7 @@ export default class MemeCommand extends AbstractCommandModule {
    }
 
    getCommand(): string {
-      return "piss";
+      return "meme";
    }
 
    getDescription(): string {
