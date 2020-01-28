@@ -86,7 +86,7 @@ export default class MemeCommand extends AbstractCommandModule {
       const memePathSplitted = memePath.split(" ").filter(Boolean);
       for (let memePathSeg of memePathSplitted) {
          if (typeof dict[memePathSeg] === "string") {
-            return path.join(dict[memePathSeg]);
+            return path.join(result, dict[memePathSeg]);
          }
          dict = dict[memePathSeg];
          result = path.join(result, memePathSeg);
