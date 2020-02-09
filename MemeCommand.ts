@@ -1,5 +1,5 @@
 import { AbstractCommandModule, Message, OutgoingMessage, AzureStorage, ContextualizableModuleConfiguration } from "botyo-api";
-import { BlobServiceClient, ContainerClient, BlobClient } from "@azure/storage-blob";
+import { BlobServiceClient, ContainerClient, BlobClient, ContainerListBlobsOptions, BlobItem } from "@azure/storage-blob";
 import { inject } from "inversify";
 import fs = require('fs');
 import path = require('path');
@@ -41,7 +41,6 @@ export default class MemeCommand extends AbstractCommandModule {
         this.memes = YAML.load(memeConfigRawBuffer.toString('utf8')) as object;
     }
 
-    //seems like we can not directly assign stream returned by BlobClient.download() to a message
     async getFileStream(path: string): Promise<NodeJS.ReadableStream | null> {
         const containerName: string = this.config.getProperty<string>(MemeCommand.CONFIG_AZURE_CONTAINER_NAME);
         const container: ContainerClient = this.azureStorage.getContainerClient(containerName);
@@ -54,6 +53,31 @@ export default class MemeCommand extends AbstractCommandModule {
             return null;
         }
         return reponse.readableStreamBody;
+    }
+
+    async getRandomInDirectoryFileStream(dirPath: string): Promise<{ stream: NodeJS.ReadableStream, newPath: string } | null> {
+        const containerName: string = this.config.getProperty<string>(MemeCommand.CONFIG_AZURE_CONTAINER_NAME);
+        const container: ContainerClient = this.azureStorage.getContainerClient(containerName);
+        let blobs: BlobItem[] = [];
+        for await (const blob of container.listBlobsFlat({ prefix: dirPath.replace("\\", "/") })) {
+            blobs.push(blob);
+            this.getRuntime().getLogger().info("blob " + blob.name);
+        }
+        if (!blobs.length) {
+            return null;
+        }
+        let randomBlob: BlobItem = blobs[Math.floor(Math.random() * blobs.length)];
+        const fileBlob: BlobClient = container.getBlobClient(randomBlob.name);
+        if (!(await fileBlob.exists())) {
+            return null;
+        }
+        let reponse = await fileBlob.download();
+        if (!reponse.readableStreamBody) {
+            return null;
+        }
+        return {
+            stream: reponse.readableStreamBody, newPath: path.join(dirPath, randomBlob.name)
+        };
     }
 
     async initialise() {
@@ -100,8 +124,17 @@ export default class MemeCommand extends AbstractCommandModule {
             return this.getRuntime().getChatApi().sendMessage(msg.threadID, this.buildMemeList(this.memes, 0));
         }
         let attachmentPath: string = this.buildMemePath(args);
+        let attachmmentOldStream: NodeJS.ReadableStream | null | undefined;
 
-        let attachmmentOldStream: NodeJS.ReadableStream | null = await this.getFileStream(attachmentPath);
+        if (this.checkMemeIsDir(this.memes, args)) {
+            let result = await this.getRandomInDirectoryFileStream(attachmentPath);
+            if (result) {
+                attachmmentOldStream = result.stream;
+                attachmentPath = result.newPath;
+            }
+        } else {
+            attachmmentOldStream = await this.getFileStream(attachmentPath);
+        }
         if (!attachmmentOldStream) {
             return this.getRuntime().getChatApi().sendMessage(msg.threadID, "Error occured: " + attachmentPath + " not available");
         }
@@ -126,6 +159,19 @@ export default class MemeCommand extends AbstractCommandModule {
         }
         else if (memePathSplitted.length == 1) {
             return memePathSplitted[0] in memeDict;
+        }
+        return false;
+    }
+
+    private checkMemeIsDir(memeDict: any, memePath: string): boolean {
+        const memePathSplitted = memePath.split(" ", 2).filter(Boolean);
+        if (memePathSplitted.length == 2) {
+            if (memeDict[memePathSplitted[0]] != null) {
+                return this.checkMemeValid(memeDict[memePathSplitted[0]], memePathSplitted[1]);
+            }
+        }
+        else if (memePathSplitted.length == 1) {
+            return !memeDict[memePathSplitted[0]] || typeof memeDict[memePathSplitted[0]] !== "string";
         }
         return false;
     }
