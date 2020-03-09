@@ -61,7 +61,6 @@ export default class MemeCommand extends AbstractCommandModule {
         let blobs: BlobItem[] = [];
         for await (const blob of container.listBlobsFlat({ prefix: dirPath.replace("\\", "/") })) {
             blobs.push(blob);
-            this.getRuntime().getLogger().info("blob " + blob.name);
         }
         if (!blobs.length) {
             return null;
@@ -97,7 +96,7 @@ export default class MemeCommand extends AbstractCommandModule {
     }
 
     getUsage(): string {
-        return "<nazwa mema lub folder>, wpisz #meme list zeby zobaczyc liste memow";
+        return "<nazwa mema lub folder>, wpisz #meme list zeby zobaczyc liste memow lub #meme rnd zeby wyslac losowy mem";
     }
 
     validate(msg: Message, args: string): boolean {
@@ -105,7 +104,7 @@ export default class MemeCommand extends AbstractCommandModule {
             return false;
         }
 
-        if (args === "list") {
+        if (args === "list" || args === "update" || args === "rnd") {
             return true;
         }
 
@@ -123,10 +122,16 @@ export default class MemeCommand extends AbstractCommandModule {
         if (args === "list") {
             return this.getRuntime().getChatApi().sendMessage(msg.threadID, this.buildMemeList(this.memes, 0));
         }
-        let attachmentPath: string = this.buildMemePath(args);
+        else if (args === "update") {
+            return this.initialise();
+        }
+
+        let isRandom: boolean = args === "rnd";
+
+        let attachmentPath: string = isRandom ? "" : this.buildMemePath(args);
         let attachmmentOldStream: NodeJS.ReadableStream | null | undefined;
 
-        if (this.checkMemeIsDir(this.memes, args)) {
+        if (isRandom || this.checkMemeIsDir(this.memes, args)) {
             let result = await this.getRandomInDirectoryFileStream(attachmentPath);
             if (result) {
                 attachmmentOldStream = result.stream;
